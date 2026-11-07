@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Simple Mail</string>
+    <string name="notification_channel_name">Email Notifications</string>
+    <string name="notification_channel_desc">Notifications for new incoming emails</string>
+    <string name="sync_channel_name">Email Synchronization</string>
+    <string name="sync_channel_desc">Background synchronization status</string>
+</resources>
