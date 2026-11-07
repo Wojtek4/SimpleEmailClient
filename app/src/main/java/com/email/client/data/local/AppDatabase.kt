@@ -10,14 +10,12 @@ import com.email.client.data.local.entity.AccountEntity
 import com.email.client.data.local.entity.AttachmentEntity
 import com.email.client.data.local.entity.FolderEntity
 import com.email.client.data.local.entity.MessageEntity
-import com.email.client.data.local.entity.MessageFtsEntity
 
 @Database(
     entities = [
         AccountEntity::class,
         FolderEntity::class,
         MessageEntity::class,
-        MessageFtsEntity::class,
         AttachmentEntity::class
     ],
     version = 1,

@@ -54,12 +54,16 @@ interface MessageDao {
     @Query("SELECT COUNT(*) FROM messages WHERE folderId = :folderId")
     suspend fun getTotalCount(folderId: Long): Int
 
-    // Full-Text Search utilizing Room FTS4 virtual table
+    // Full-Text Search across sender, subject, and snippet
     @Query("""
-        SELECT m.* FROM messages m
-        JOIN messages_fts fts ON m.id = fts.rowid
-        WHERE messages_fts MATCH :query AND m.accountId = :accountId
-        ORDER BY m.receivedDate DESC
+        SELECT * FROM messages
+        WHERE accountId = :accountId AND (
+            subject LIKE '%' || :query || '%'
+            OR senderName LIKE '%' || :query || '%'
+            OR senderAddress LIKE '%' || :query || '%'
+            OR previewSnippet LIKE '%' || :query || '%'
+        )
+        ORDER BY receivedDate DESC
     """)
     fun searchMessages(accountId: Long, query: String): Flow<List<MessageEntity>>
 

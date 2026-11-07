@@ -41,7 +41,7 @@ app/src/main/
 │   ├── data/
 │   │   ├── local/                           # Room Database, Entities, & DAOs
 │   │   │   ├── dao/                         # AccountDao, FolderDao, MessageDao, AttachmentDao
-│   │   │   └── entity/                      # AccountEntity, MessageEntity, MessageFtsEntity, etc.
+│   │   │   └── entity/                      # AccountEntity, MessageEntity, AttachmentEntity, etc.
 │   │   ├── mail/                            # JavaMail / Jakarta Mail Client wrapper
 │   │   │   ├── ImapClient.kt                # IMAP folder & message fetching, IDLE
 │   │   │   ├── SmtpClient.kt                # SMTP dispatch & MIME multipart composer

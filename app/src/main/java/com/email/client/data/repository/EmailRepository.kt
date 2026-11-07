@@ -48,7 +48,7 @@ class EmailRepository @Inject constructor(
     fun observeMessage(messageId: Long): Flow<MessageEntity?> = messageDao.observeMessageById(messageId)
 
     fun searchMessages(accountId: Long, query: String): Flow<List<MessageEntity>> =
-        messageDao.searchMessages(accountId, "$query*")
+        messageDao.searchMessages(accountId, query)
 
     suspend fun addAccount(account: AccountEntity, passwordOrToken: String): Long {
         val id = accountDao.insertAccount(account)
