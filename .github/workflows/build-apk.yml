@@ -28,6 +28,7 @@ jobs:
 
       - name: Build Debug APK
         run: |
+          set -o pipefail
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Print Failure Log
@@ -36,21 +37,20 @@ jobs:
           echo "=== BUILD LOG (Last 200 lines) ==="
           tail -n 200 build.log
 
-      - name: Upload Build Log on Failure
-        if: failure()
+      - name: Upload Build Log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-failure-log
+          name: build-log
           path: build.log
 
-      - name: Rename APK
-        if: success()
+      - name: Prepare APK Output
         run: |
           mkdir -p output
-          cp app/build/outputs/apk/debug/app-debug.apk output/SimpleEmailClient-debug.apk
+          find app/build/outputs/apk -name "*.apk" -exec cp {} output/SimpleEmailClient-debug.apk \;
+          ls -la output/
 
       - name: Upload APK Artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: SimpleEmailClient-APK

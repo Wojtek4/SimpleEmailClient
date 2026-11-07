@@ -24,6 +24,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.mail.Flags
+import javax.mail.Folder
 
 @Singleton
 class EmailRepository @Inject constructor(
