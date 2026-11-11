@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -81,68 +83,76 @@ fun MailboxScreen(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = uiState.selectedAccount?.email ?: "Simple Mail",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    fontWeight = FontWeight.Bold
-                )
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-                Text(
-                    text = "FOLDERS",
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                uiState.folders.forEach { folder ->
-                    val isSelected = folder.id == uiState.selectedFolder?.id
-                    NavigationDrawerItem(
-                        label = {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(folder.name, modifier = Modifier.weight(1f))
-                                if (folder.unreadCount > 0) {
-                                    Text(
-                                        text = folder.unreadCount.toString(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = getFolderIcon(folder.type),
-                                contentDescription = folder.name
-                            )
-                        },
-                        selected = isSelected,
-                        onClick = {
-                            viewModel.selectFolder(folder)
-                            coroutineScope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(horizontal = 12.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = uiState.selectedAccount?.email ?: "Simple Mail",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                        fontWeight = FontWeight.Bold
                     )
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    Text(
+                        text = "FOLDERS",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    uiState.folders.forEach { folder ->
+                        val isSelected = folder.id == uiState.selectedFolder?.id
+                        NavigationDrawerItem(
+                            label = {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(folder.name, modifier = Modifier.weight(1f))
+                                    if (folder.unreadCount > 0) {
+                                        Text(
+                                            text = folder.unreadCount.toString(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = getFolderIcon(folder.type),
+                                    contentDescription = folder.name
+                                )
+                            },
+                            selected = isSelected,
+                            onClick = {
+                                viewModel.selectFolder(folder)
+                                coroutineScope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f, fill = false))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider()
+
+                    NavigationDrawerItem(
+                        label = { Text("Add Another Account") },
+                        icon = { Icon(Icons.Default.Add, contentDescription = "Add Account") },
+                        selected = false,
+                        onClick = {
+                            coroutineScope.launch { drawerState.close() }
+                            onNavigateToAddAccount()
+                        },
+                        modifier = Modifier.padding(12.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
-
-                Spacer(modifier = Modifier.weight(1f))
-                Divider()
-
-                NavigationDrawerItem(
-                    label = { Text("Add Another Account") },
-                    icon = { Icon(Icons.Default.Add, contentDescription = "Add Account") },
-                    selected = false,
-                    onClick = {
-                        coroutineScope.launch { drawerState.close() }
-                        onNavigateToAddAccount()
-                    },
-                    modifier = Modifier.padding(12.dp)
-                )
             }
         }
     ) {
