@@ -27,6 +27,11 @@ import javax.mail.AuthenticationFailedException
 import javax.mail.Flags
 import javax.mail.Folder
 
+data class SyncResult(
+    val totalSynced: Int,
+    val newMessages: List<MessageEntity> = emptyList()
+)
+
 @Singleton
 class EmailRepository @Inject constructor(
     private val accountDao: AccountDao,
@@ -61,19 +66,23 @@ class EmailRepository @Inject constructor(
     fun getAllStarredMessages(): Flow<List<MessageEntity>> =
         messageDao.getAllStarredMessages()
 
-    suspend fun syncAllInboxes(): Result<Int> = withContext(Dispatchers.IO) {
+    suspend fun syncAllInboxes(): Result<SyncResult> = withContext(Dispatchers.IO) {
         try {
             val accounts = accountDao.getAllAccountsSync()
             var count = 0
+            val allNew = mutableListOf<MessageEntity>()
             for (acc in accounts) {
                 syncFolders(acc.id)
                 val inbox = folderDao.getFolderByType(acc.id, FolderType.INBOX)
                 if (inbox != null) {
                     val res = syncMessages(inbox.id)
-                    count += res.getOrDefault(0)
+                    res.getOrNull()?.let {
+                        count += it.totalSynced
+                        allNew.addAll(it.newMessages)
+                    }
                 }
             }
-            Result.success(count)
+            Result.success(SyncResult(totalSynced = count, newMessages = allNew))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -172,7 +181,7 @@ class EmailRepository @Inject constructor(
         }
     }
 
-    suspend fun syncMessages(folderId: Long, limit: Int = 100): Result<Int> = withContext(Dispatchers.IO) {
+    suspend fun syncMessages(folderId: Long, limit: Int = 100): Result<SyncResult> = withContext(Dispatchers.IO) {
         try {
             val folder = folderDao.getFolderById(folderId)
                 ?: return@withContext Result.failure(IllegalArgumentException("Folder not found"))
@@ -196,6 +205,8 @@ class EmailRepository @Inject constructor(
                 if (imapFolder.isOpen) imapFolder.close(false)
                 store.close()
             }
+
+            val newlyArrivedMessages = mutableListOf<MessageEntity>()
 
             for (d in details) {
                 val existing = existingMap[d.header.uid]
@@ -235,6 +246,10 @@ class EmailRepository @Inject constructor(
                 val savedRowId = messageDao.insertMessage(messageEntity)
                 val targetId = if (existing != null && existing.id > 0) existing.id else savedRowId
 
+                if (existing == null && !messageEntity.isRead) {
+                    newlyArrivedMessages.add(messageEntity.copy(id = targetId))
+                }
+
                 if (d.attachments.isNotEmpty()) {
                     val existingAttachments = attachmentDao.getAttachmentsForMessageSync(targetId)
                     if (existingAttachments.isEmpty()) {
@@ -256,7 +271,7 @@ class EmailRepository @Inject constructor(
             val totalCount = messageDao.getTotalCount(folderId)
             folderDao.updateCounts(folderId, unreadCount, totalCount)
 
-            Result.success(details.size)
+            Result.success(SyncResult(totalSynced = details.size, newMessages = newlyArrivedMessages))
         } catch (e: Exception) {
             Result.failure(e)
         }

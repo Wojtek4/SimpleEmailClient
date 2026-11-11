@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.email.client.data.sync.SyncScheduler
 import dagger.hilt.android.HiltAndroidApp
 import javax.activation.CommandMap
 import javax.activation.MailcapCommandMap
@@ -27,6 +28,7 @@ class EmailApplication : Application(), Configuration.Provider {
         super.onCreate()
         setupMailcap()
         createNotificationChannels()
+        SyncScheduler.schedulePeriodicSync(this)
     }
 
     private fun setupMailcap() {
@@ -54,6 +56,8 @@ class EmailApplication : Application(), Configuration.Provider {
             ).apply {
                 description = getString(R.string.notification_channel_desc)
                 enableVibration(true)
+                enableLights(true)
+                setShowBadge(true)
             }
 
             val syncChannel = NotificationChannel(

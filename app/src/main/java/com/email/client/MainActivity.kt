@@ -1,13 +1,20 @@
 package com.email.client
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -43,14 +50,42 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SimpleEmailTheme {
-                AppRoot(accountDao = accountDao)
+                // Request Notification Permission on Android 13+ (API 33+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val permissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestPermission()
+                    ) { _ -> }
+
+                    LaunchedEffect(Unit) {
+                        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }
+
+                AppRoot(
+                    accountDao = accountDao,
+                    initialIntent = intent
+                )
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
+    companion object {
+        const val EXTRA_MESSAGE_ID = "extra_message_id"
     }
 }
 
 @Composable
-fun AppRoot(accountDao: AccountDao) {
+fun AppRoot(
+    accountDao: AccountDao,
+    initialIntent: Intent?
+) {
     val accounts by accountDao.getAllAccounts().collectAsState(initial = null)
     val navController = rememberNavController()
 
@@ -62,6 +97,14 @@ fun AppRoot(accountDao: AccountDao) {
             CircularProgressIndicator()
         }
         return
+    }
+
+    // Direct deep-link navigation if opened from email notification
+    LaunchedEffect(initialIntent) {
+        val targetMessageId = initialIntent?.getLongExtra(MainActivity.EXTRA_MESSAGE_ID, -1L) ?: -1L
+        if (targetMessageId > 0 && accounts!!.isNotEmpty()) {
+            navController.navigate("message_detail/$targetMessageId")
+        }
     }
 
     val startDestination = if (accounts!!.isEmpty()) "onboarding" else "mailbox"
