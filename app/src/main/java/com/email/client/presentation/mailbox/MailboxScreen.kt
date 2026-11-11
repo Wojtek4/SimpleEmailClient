@@ -19,6 +19,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowDropUp
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Email
@@ -42,6 +46,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -50,7 +55,10 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -78,6 +86,7 @@ fun MailboxScreen(
     val messages by viewModel.messages.collectAsState()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
+    var showAccountPicker by remember { mutableStateOf(false) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -89,12 +98,127 @@ fun MailboxScreen(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = uiState.selectedAccount?.email ?: "Simple Mail",
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                        fontWeight = FontWeight.Bold
-                    )
+
+                    // Account Header with Dropdown Switcher
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (uiState.accounts.size > 1) {
+                                    showAccountPicker = !showAccountPicker
+                                }
+                            }
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
+                        color = Color.Transparent
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val accountInitial = (uiState.selectedAccount?.displayName
+                                ?: uiState.selectedAccount?.email
+                                ?: "M").take(1).uppercase()
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = accountInitial,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = uiState.selectedAccount?.displayName?.ifBlank { null }
+                                        ?: uiState.selectedAccount?.email
+                                        ?: "Simple Mail",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = uiState.selectedAccount?.email ?: "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            if (uiState.accounts.size > 1) {
+                                Icon(
+                                    imageVector = if (showAccountPicker) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+                                    contentDescription = "Switch Account",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    // Account Selection List (when expanded)
+                    if (showAccountPicker && uiState.accounts.size > 1) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                uiState.accounts.forEach { account ->
+                                    val isCurrent = account.id == uiState.selectedAccount?.id
+                                    NavigationDrawerItem(
+                                        label = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = account.displayName.ifBlank { account.email },
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+                                                    )
+                                                    Text(
+                                                        text = account.email,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                if (isCurrent) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Active",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        icon = {
+                                            Icon(
+                                                imageVector = Icons.Default.AccountCircle,
+                                                contentDescription = null
+                                            )
+                                        },
+                                        selected = isCurrent,
+                                        onClick = {
+                                            viewModel.selectAccount(account)
+                                            showAccountPicker = false
+                                        },
+                                        modifier = Modifier.padding(horizontal = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
 
                     Text(
@@ -104,37 +228,52 @@ fun MailboxScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
-                    uiState.folders.forEach { folder ->
-                        val isSelected = folder.id == uiState.selectedFolder?.id
-                        NavigationDrawerItem(
-                            label = {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(folder.name, modifier = Modifier.weight(1f))
-                                    if (folder.unreadCount > 0) {
-                                        Text(
-                                            text = folder.unreadCount.toString(),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                    if (uiState.folders.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Loading folders...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        uiState.folders.forEach { folder ->
+                            val isSelected = folder.id == uiState.selectedFolder?.id
+                            NavigationDrawerItem(
+                                label = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(folder.name, modifier = Modifier.weight(1f))
+                                        if (folder.unreadCount > 0) {
+                                            Text(
+                                                text = folder.unreadCount.toString(),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    imageVector = getFolderIcon(folder.type),
-                                    contentDescription = folder.name
-                                )
-                            },
-                            selected = isSelected,
-                            onClick = {
-                                viewModel.selectFolder(folder)
-                                coroutineScope.launch { drawerState.close() }
-                            },
-                            modifier = Modifier.padding(horizontal = 12.dp)
-                        )
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = getFolderIcon(folder.type),
+                                        contentDescription = folder.name
+                                    )
+                                },
+                                selected = isSelected,
+                                onClick = {
+                                    viewModel.selectFolder(folder)
+                                    coroutineScope.launch { drawerState.close() }
+                                },
+                                modifier = Modifier.padding(horizontal = 12.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.weight(1f, fill = false))

@@ -41,28 +41,37 @@ class MailboxViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(MailboxUiState())
     val uiState: StateFlow<MailboxUiState> = _uiState.asStateFlow()
 
+    private var folderCollectionJob: kotlinx.coroutines.Job? = null
+
     init {
         viewModelScope.launch {
             emailRepository.getAllAccounts().collect { accounts ->
+                val currentSelected = _uiState.value.selectedAccount
+                val updatedSelected = accounts.find { it.id == currentSelected?.id }
+                    ?: accounts.firstOrNull()
+
                 _uiState.update { current ->
-                    val selected = current.selectedAccount ?: accounts.firstOrNull()
                     current.copy(
                         accounts = accounts,
-                        selectedAccount = selected
+                        selectedAccount = updatedSelected
                     )
                 }
-                _uiState.value.selectedAccount?.let { acc ->
-                    loadFolders(acc.id)
+
+                if (updatedSelected != null && (currentSelected == null || updatedSelected.id != currentSelected.id || _uiState.value.folders.isEmpty())) {
+                    loadFolders(updatedSelected.id)
                 }
             }
         }
     }
 
     private fun loadFolders(accountId: Long) {
-        viewModelScope.launch {
+        folderCollectionJob?.cancel()
+        folderCollectionJob = viewModelScope.launch {
+            // Also trigger background folder sync if empty
+            emailRepository.syncFolders(accountId)
             emailRepository.getFolders(accountId).collect { folders ->
                 _uiState.update { current ->
-                    val selectedFolder = current.selectedFolder
+                    val selectedFolder = current.selectedFolder?.takeIf { sf -> folders.any { it.id == sf.id } }
                         ?: folders.firstOrNull { it.type == FolderType.INBOX }
                         ?: folders.firstOrNull()
                     current.copy(
