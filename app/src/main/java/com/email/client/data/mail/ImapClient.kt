@@ -165,11 +165,12 @@ class ImapClient @Inject constructor() {
         index: Int
     ) {
         val disposition = part.disposition
+        val fileName = part.fileName
         val isAttachment = disposition?.equals(Part.ATTACHMENT, ignoreCase = true) == true ||
-                (!part.fileName.isNullOrBlank() && disposition?.equals(Part.INLINE, ignoreCase = true) != true)
+                (!fileName.isNullOrBlank() && disposition?.equals(Part.INLINE, ignoreCase = true) != true)
 
         if (isAttachment) {
-            val rawName = part.fileName ?: "attachment_$index"
+            val rawName = fileName ?: "attachment_$index"
             val decodedName = try { MimeUtility.decodeText(rawName) } catch (_: Exception) { rawName }
             attachments.add(
                 RemoteAttachment(
@@ -184,37 +185,92 @@ class ImapClient @Inject constructor() {
         }
 
         if (part.isMimeType("text/plain")) {
-            val content = part.content
-            if (content is String) {
-                bodyPlain.append(content)
-            } else if (content is InputStream) {
-                bodyPlain.append(readStreamToString(content))
+            val text = extractTextFromPart(part)
+            if (!text.isNullOrBlank()) {
+                bodyPlain.append(text)
             }
         } else if (part.isMimeType("text/html")) {
-            val content = part.content
-            if (content is String) {
-                bodyHtml.append(content)
-            } else if (content is InputStream) {
-                bodyHtml.append(readStreamToString(content))
+            val text = extractTextFromPart(part)
+            if (!text.isNullOrBlank()) {
+                bodyHtml.append(text)
             }
         } else if (part.isMimeType("multipart/*")) {
-            val mp = part.content as? Multipart
+            val mp = try {
+                part.content as? Multipart
+            } catch (_: Exception) {
+                null
+            }
             if (mp != null) {
                 for (i in 0 until mp.count) {
                     parsePartContent(mp.getBodyPart(i), bodyPlain, bodyHtml, attachments, i)
+                }
+            } else {
+                try {
+                    val stream = part.inputStream
+                    val raw = readStreamToString(stream, getCharsetFromContentType(part.contentType))
+                    bodyPlain.append(raw)
+                } catch (_: Exception) {}
+            }
+        } else if (part.isMimeType("message/rfc822")) {
+            try {
+                val nested = part.content as? Part
+                if (nested != null) {
+                    parsePartContent(nested, bodyPlain, bodyHtml, attachments, index)
+                }
+            } catch (_: Exception) {}
+        } else {
+            // Check if it's text with uncommon subtype
+            val ct = part.contentType?.lowercase() ?: ""
+            if (ct.startsWith("text/")) {
+                val text = extractTextFromPart(part)
+                if (!text.isNullOrBlank()) {
+                    bodyPlain.append(text)
                 }
             }
         }
     }
 
-    private fun readStreamToString(input: InputStream): String {
+    private fun extractTextFromPart(part: Part): String? {
+        try {
+            val content = part.content
+            if (content is String) {
+                return content
+            }
+            if (content is InputStream) {
+                return readStreamToString(content, getCharsetFromContentType(part.contentType))
+            }
+        } catch (_: Exception) {
+            // Fall back to reading raw stream
+        }
+
+        return try {
+            val stream = part.inputStream
+            readStreamToString(stream, getCharsetFromContentType(part.contentType))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun getCharsetFromContentType(contentType: String?): String {
+        if (contentType.isNullOrBlank()) return "UTF-8"
+        val match = Regex("charset\\s*=\\s*\"?([^\\s;\"]+)\"?", RegexOption.IGNORE_CASE).find(contentType)
+        return match?.groupValues?.get(1)?.trim() ?: "UTF-8"
+    }
+
+    private fun readStreamToString(input: InputStream, charsetName: String = "UTF-8"): String {
         val buffer = ByteArrayOutputStream()
         val data = ByteArray(4096)
         var nRead: Int
         while (input.read(data, 0, data.size).also { nRead = it } != -1) {
             buffer.write(data, 0, nRead)
         }
-        return buffer.toString("UTF-8")
+        val bytes = buffer.toByteArray()
+        val charset = try {
+            java.nio.charset.Charset.forName(charsetName)
+        } catch (_: Exception) {
+            Charsets.UTF_8
+        }
+        return String(bytes, charset)
     }
 
     private fun parseMessageHeader(msg: Message, uid: Long): RemoteMessageHeader {

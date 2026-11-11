@@ -1,7 +1,10 @@
 package com.email.client.presentation.mailbox
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,10 +19,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AllInbox
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.Check
@@ -28,6 +33,8 @@ import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.MarkEmailRead
+import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -37,10 +44,14 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -167,10 +178,56 @@ fun MailboxScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 12.dp, vertical = 4.dp),
-                            shape = CircleShape,
+                            shape = RoundedCornerShape(16.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         ) {
                             Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                                // Combined Meta-Account Option
+                                val isAllSelected = uiState.selectedAccount?.id == ALL_ACCOUNTS_ID
+                                NavigationDrawerItem(
+                                    label = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "All Accounts",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isAllSelected) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                                Text(
+                                                    text = "Combined Inboxes & Folders",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            if (isAllSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Active",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    icon = {
+                                        Icon(
+                                            imageVector = Icons.Default.AllInbox,
+                                            contentDescription = null
+                                        )
+                                    },
+                                    selected = isAllSelected,
+                                    onClick = {
+                                        viewModel.selectAccount(ALL_ACCOUNTS_META)
+                                        showAccountPicker = false
+                                    },
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+
+                                Divider(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+
                                 uiState.accounts.forEach { account ->
                                     val isCurrent = account.id == uiState.selectedAccount?.id
                                     NavigationDrawerItem(
@@ -355,31 +412,74 @@ fun MailboxScreen(
                 }
             }
         ) { paddingValues ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(paddingValues)
             ) {
-                if (messages.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (uiState.searchQuery.isNotBlank()) "No matching emails found" else "No emails in this folder",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(messages, key = { it.id }) { message ->
-                            MessageItemRow(
-                                message = message,
-                                onClick = { onNavigateToMessage(message.id) },
-                                onToggleStar = { viewModel.toggleStarredStatus(message) }
+                if (uiState.isRefreshing) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+
+                // Filter row (All, Unread only, Starred)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = uiState.filter == MailFilter.ALL,
+                        onClick = { viewModel.setFilter(MailFilter.ALL) },
+                        label = { Text("All") }
+                    )
+                    FilterChip(
+                        selected = uiState.filter == MailFilter.UNREAD,
+                        onClick = { viewModel.setFilter(MailFilter.UNREAD) },
+                        label = { Text("Unread") },
+                        leadingIcon = if (uiState.filter == MailFilter.UNREAD) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        } else null
+                    )
+                    FilterChip(
+                        selected = uiState.filter == MailFilter.STARRED,
+                        onClick = { viewModel.setFilter(MailFilter.STARRED) },
+                        label = { Text("Starred") },
+                        leadingIcon = if (uiState.filter == MailFilter.STARRED) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        } else null
+                    )
+                }
+
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (messages.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = when {
+                                    uiState.searchQuery.isNotBlank() -> "No matching emails found"
+                                    uiState.filter == MailFilter.UNREAD -> "No unread emails in this folder"
+                                    uiState.filter == MailFilter.STARRED -> "No starred emails in this folder"
+                                    else -> "No emails in this folder"
+                                },
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(messages, key = { it.id }) { message ->
+                                MessageItemRow(
+                                    message = message,
+                                    onClick = { onNavigateToMessage(message.id) },
+                                    onToggleRead = { viewModel.toggleReadStatus(message) },
+                                    onToggleStar = { viewModel.toggleStarredStatus(message) }
+                                )
+                                Divider(color = MaterialTheme.colorScheme.surfaceVariant)
+                            }
                         }
                     }
                 }
@@ -388,90 +488,131 @@ fun MailboxScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageItemRow(
     message: MessageEntity,
     onClick: () -> Unit,
+    onToggleRead: () -> Unit,
     onToggleStar: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .background(if (!message.isRead) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else Color.Transparent)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        val initial = (message.senderName.ifBlank { message.senderAddress }).take(1).uppercase()
-        Box(
+    var showMenu by remember { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
             modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { showMenu = true }
+                )
+                .background(if (!message.isRead) MaterialTheme.colorScheme.primary.copy(alpha = 0.05f) else Color.Transparent)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            Text(
-                text = initial,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            val initial = (message.senderName.ifBlank { message.senderAddress }).take(1).uppercase()
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = message.senderName.ifBlank { message.senderAddress },
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = if (!message.isRead) FontWeight.Bold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-
-                Text(
-                    text = formatMessageDate(message.receivedDate),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = initial,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
-            Text(
-                text = message.subject.ifBlank { "(No Subject)" },
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = if (!message.isRead) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = message.senderName.ifBlank { message.senderAddress },
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = if (!message.isRead) FontWeight.Bold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
 
-            Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = formatMessageDate(message.receivedDate),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-            Text(
-                text = message.previewSnippet,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = message.subject.ifBlank { "(No Subject)" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (!message.isRead) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = message.previewSnippet,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            IconButton(
+                onClick = onToggleStar,
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    imageVector = if (message.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
+                    contentDescription = "Star",
+                    tint = if (message.isStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
-        Spacer(modifier = Modifier.width(8.dp))
-
-        IconButton(
-            onClick = onToggleStar,
-            modifier = Modifier.size(24.dp)
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false }
         ) {
-            Icon(
-                imageVector = if (message.isStarred) Icons.Default.Star else Icons.Default.StarBorder,
-                contentDescription = "Star",
-                tint = if (message.isStarred) Color(0xFFFFB300) else MaterialTheme.colorScheme.onSurfaceVariant
+            DropdownMenuItem(
+                text = { Text(if (message.isRead) "Mark as unread" else "Mark as read") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (message.isRead) Icons.Default.MarkEmailUnread else Icons.Default.MarkEmailRead,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    showMenu = false
+                    onToggleRead()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text(if (message.isStarred) "Remove star" else "Star") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (message.isStarred) Icons.Default.StarBorder else Icons.Default.Star,
+                        contentDescription = null
+                    )
+                },
+                onClick = {
+                    showMenu = false
+                    onToggleStar()
+                }
             )
         }
     }

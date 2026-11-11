@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
@@ -43,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -210,48 +213,72 @@ fun MessageDetailScreen(
                     }
                 } else {
                     val html = message.bodyHtml
-                    val plain = message.bodyPlain ?: message.previewSnippet
+                    val plain = message.bodyPlain
 
                     if (!html.isNullOrBlank()) {
                         AndroidView(
                             factory = { context ->
                                 WebView(context).apply {
-                                    // Security hardening: sandbox WebView
                                     settings.javaScriptEnabled = false
                                     settings.allowFileAccess = false
                                     settings.allowContentAccess = false
-
-                                    val styledHtml = """
-                                        <html>
-                                        <head>
-                                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                                            <style>
-                                                body {
-                                                    font-family: -apple-system, Roboto, sans-serif;
-                                                    font-size: 15px;
-                                                    line-height: 1.5;
-                                                    color: #212121;
-                                                    word-wrap: break-word;
-                                                    padding: 0;
-                                                    margin: 0;
-                                                }
-                                                img { max-width: 100%; height: auto; }
-                                            </style>
-                                        </head>
-                                        <body>$html</body>
-                                        </html>
-                                    """.trimIndent()
-                                    loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+                                    settings.loadWithOverviewMode = true
+                                    settings.useWideViewPort = true
+                                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            update = { webView ->
+                                val styledHtml = """
+                                    <!DOCTYPE html>
+                                    <html>
+                                    <head>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                                        <style>
+                                            body {
+                                                font-family: -apple-system, Roboto, sans-serif;
+                                                font-size: 15px;
+                                                line-height: 1.5;
+                                                color: #212121;
+                                                word-wrap: break-word;
+                                                padding: 4px;
+                                                margin: 0;
+                                            }
+                                            img { max-width: 100%; height: auto; }
+                                            table { max-width: 100%; }
+                                            pre { white-space: pre-wrap; word-wrap: break-word; }
+                                        </style>
+                                    </head>
+                                    <body>$html</body>
+                                    </html>
+                                """.trimIndent()
+                                webView.loadDataWithBaseURL(null, styledHtml, "text/html", "utf-8", null)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 250.dp, max = 5000.dp)
                         )
+                    } else if (!plain.isNullOrBlank()) {
+                        SelectionContainer {
+                            Text(
+                                text = plain,
+                                style = MaterialTheme.typography.bodyMedium,
+                                lineHeight = 22.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            )
+                        }
                     } else {
-                        Text(
-                            text = plain,
-                            style = MaterialTheme.typography.bodyMedium,
-                            lineHeight = MaterialTheme.typography.bodyMedium.lineHeight
-                        )
+                        SelectionContainer {
+                            Text(
+                                text = message.previewSnippet.ifBlank { "(No content)" },
+                                style = MaterialTheme.typography.bodyMedium,
+                                lineHeight = 22.sp,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            )
+                        }
                     }
                 }
             }

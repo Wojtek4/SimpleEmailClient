@@ -78,6 +78,7 @@ class ComposeViewModel @Inject constructor(
     fun onSubjectChanged(subj: String) = _uiState.update { it.copy(subject = subj) }
     fun onBodyChanged(b: String) = _uiState.update { it.copy(body = b) }
     fun toggleCcBcc() = _uiState.update { it.copy(showCcBcc = !it.showCcBcc) }
+    fun onSelectAccount(account: AccountEntity) = _uiState.update { it.copy(selectedAccount = account) }
 
     fun addAttachment(path: String) {
         _uiState.update { it.copy(attachmentPaths = it.attachmentPaths + path) }

@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import com.email.client.data.local.entity.FolderType
 import com.email.client.data.local.entity.MessageEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -69,4 +70,28 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE accountId = :accountId AND isStarred = 1 ORDER BY receivedDate DESC")
     fun getStarredMessages(accountId: Long): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages ORDER BY receivedDate DESC")
+    fun getAllMessages(): Flow<List<MessageEntity>>
+
+    @Query("""
+        SELECT m.* FROM messages m
+        JOIN folders f ON m.folderId = f.id
+        WHERE f.type = :folderType
+        ORDER BY m.receivedDate DESC
+    """)
+    fun getMessagesForFolderType(folderType: FolderType): Flow<List<MessageEntity>>
+
+    @Query("""
+        SELECT * FROM messages
+        WHERE subject LIKE '%' || :query || '%'
+            OR senderName LIKE '%' || :query || '%'
+            OR senderAddress LIKE '%' || :query || '%'
+            OR previewSnippet LIKE '%' || :query || '%'
+        ORDER BY receivedDate DESC
+    """)
+    fun searchAllMessages(query: String): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages WHERE isStarred = 1 ORDER BY receivedDate DESC")
+    fun getAllStarredMessages(): Flow<List<MessageEntity>>
 }

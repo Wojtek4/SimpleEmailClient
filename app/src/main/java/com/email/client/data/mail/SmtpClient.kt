@@ -29,18 +29,33 @@ class SmtpClient @Inject constructor() {
         email: OutgoingEmail
     ): Result<Unit> = withContext(Dispatchers.IO) {
         try {
+            val isExplicitSsl = account.smtpPort == 465 || (account.smtpUseSsl && account.smtpPort != 587)
+            val useStartTls = account.smtpPort == 587 || (!isExplicitSsl && account.smtpPort != 465)
+            val protocol = if (isExplicitSsl && !useStartTls) "smtps" else "smtp"
+
             val props = Properties().apply {
-                put("mail.transport.protocol", "smtps")
-                put("mail.smtps.host", account.smtpHost)
-                put("mail.smtps.port", account.smtpPort.toString())
-                put("mail.smtps.auth", "true")
-                put("mail.smtps.ssl.enable", account.smtpUseSsl.toString())
-                put("mail.smtps.timeout", "20000")
-                put("mail.smtps.connectiontimeout", "20000")
+                put("mail.transport.protocol", protocol)
+                put("mail.$protocol.host", account.smtpHost)
+                put("mail.$protocol.port", account.smtpPort.toString())
+                put("mail.$protocol.auth", "true")
+                put("mail.$protocol.timeout", "25000")
+                put("mail.$protocol.connectiontimeout", "25000")
+                put("mail.$protocol.ssl.trust", "*")
+                put("mail.smtp.ssl.trust", "*")
+                put("mail.smtps.ssl.trust", "*")
+
+                if (useStartTls) {
+                    put("mail.smtp.starttls.enable", "true")
+                    put("mail.smtp.starttls.required", "true")
+                    put("mail.smtp.ssl.protocols", "TLSv1.2 TLSv1.3")
+                } else {
+                    put("mail.smtps.ssl.enable", "true")
+                    put("mail.smtps.ssl.protocols", "TLSv1.2 TLSv1.3")
+                }
 
                 if (account.authType == AuthType.OAUTH2) {
-                    put("mail.smtps.auth.mechanisms", "XOAUTH2")
-                    put("mail.smtps.auth.plain.disable", "true")
+                    put("mail.$protocol.auth.mechanisms", "XOAUTH2")
+                    put("mail.$protocol.auth.plain.disable", "true")
                 }
             }
 
@@ -65,33 +80,42 @@ class SmtpClient @Inject constructor() {
                 sentDate = Date()
             }
 
-            val multipart = MimeMultipart("mixed")
-
-            // Body Part
-            val bodyPart = MimeBodyPart()
-            if (email.isHtml) {
-                bodyPart.setContent(email.bodyText, "text/html; charset=utf-8")
-            } else {
-                bodyPart.setText(email.bodyText, "utf-8")
-            }
-            multipart.addBodyPart(bodyPart)
-
-            // Attachment Parts
-            for (path in email.attachmentPaths) {
-                val file = File(path)
-                if (file.exists()) {
-                    val attachPart = MimeBodyPart()
-                    val source = FileDataSource(file)
-                    attachPart.dataHandler = DataHandler(source)
-                    attachPart.fileName = file.name
-                    multipart.addBodyPart(attachPart)
+            if (email.attachmentPaths.isEmpty()) {
+                if (email.isHtml) {
+                    message.setContent(email.bodyText, "text/html; charset=utf-8")
+                } else {
+                    message.setText(email.bodyText, "utf-8")
                 }
+            } else {
+                val multipart = MimeMultipart("mixed")
+
+                // Body Part
+                val bodyPart = MimeBodyPart()
+                if (email.isHtml) {
+                    bodyPart.setContent(email.bodyText, "text/html; charset=utf-8")
+                } else {
+                    bodyPart.setText(email.bodyText, "utf-8")
+                }
+                multipart.addBodyPart(bodyPart)
+
+                // Attachment Parts
+                for (path in email.attachmentPaths) {
+                    val file = File(path)
+                    if (file.exists()) {
+                        val attachPart = MimeBodyPart()
+                        val source = FileDataSource(file)
+                        attachPart.dataHandler = DataHandler(source)
+                        attachPart.fileName = file.name
+                        multipart.addBodyPart(attachPart)
+                    }
+                }
+
+                message.setContent(multipart)
             }
 
-            message.setContent(multipart)
             message.saveChanges()
 
-            val transport = session.getTransport("smtps") as SMTPTransport
+            val transport = session.getTransport(protocol) as SMTPTransport
             try {
                 transport.connect(account.smtpHost, account.smtpPort, account.email, credentialOrToken)
                 transport.sendMessage(message, message.allRecipients)

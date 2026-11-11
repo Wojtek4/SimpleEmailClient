@@ -52,6 +52,33 @@ class EmailRepository @Inject constructor(
     fun searchMessages(accountId: Long, query: String): Flow<List<MessageEntity>> =
         messageDao.searchMessages(accountId, query)
 
+    fun getMessagesForFolderType(folderType: FolderType): Flow<List<MessageEntity>> =
+        messageDao.getMessagesForFolderType(folderType)
+
+    fun searchAllMessages(query: String): Flow<List<MessageEntity>> =
+        messageDao.searchAllMessages(query)
+
+    fun getAllStarredMessages(): Flow<List<MessageEntity>> =
+        messageDao.getAllStarredMessages()
+
+    suspend fun syncAllInboxes(): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            val accounts = accountDao.getAllAccountsSync()
+            var count = 0
+            for (acc in accounts) {
+                syncFolders(acc.id)
+                val inbox = folderDao.getFolderByType(acc.id, FolderType.INBOX)
+                if (inbox != null) {
+                    val res = syncMessages(inbox.id)
+                    count += res.getOrDefault(0)
+                }
+            }
+            Result.success(count)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun verifyConnection(account: AccountEntity, passwordOrToken: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val store = imapClient.connectAndGetStore(account, passwordOrToken)
