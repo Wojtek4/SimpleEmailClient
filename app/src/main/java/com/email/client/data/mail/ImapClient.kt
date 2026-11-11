@@ -1,5 +1,6 @@
 package com.email.client.data.mail
 
+import com.email.client.core.util.HtmlTextExtractor
 import com.email.client.data.local.entity.AccountEntity
 import com.email.client.data.local.entity.AuthType
 import com.email.client.data.local.entity.FolderType
@@ -98,7 +99,7 @@ class ImapClient @Inject constructor() {
     suspend fun fetchHeaders(
         folder: IMAPFolder,
         startUid: Long = 1L,
-        limit: Int = 50
+        limit: Int = 100
     ): List<RemoteMessageHeader> = withContext(Dispatchers.IO) {
         if (!folder.isOpen) {
             folder.open(Folder.READ_ONLY)
@@ -129,6 +130,77 @@ class ImapClient @Inject constructor() {
         headers
     }
 
+    suspend fun fetchMessagesWithBodies(
+        folder: IMAPFolder,
+        startUid: Long = 1L,
+        limit: Int = 100,
+        cachedUids: Set<Long> = emptySet()
+    ): List<RemoteMessageDetail> = withContext(Dispatchers.IO) {
+        if (!folder.isOpen) {
+            folder.open(Folder.READ_ONLY)
+        }
+
+        val total = folder.messageCount
+        if (total == 0) return@withContext emptyList()
+
+        val startIndex = maxOf(1, total - limit + 1)
+        val messages = folder.getMessages(startIndex, total)
+
+        val fp = FetchProfile().apply {
+            add(FetchProfile.Item.ENVELOPE)
+            add(FetchProfile.Item.FLAGS)
+            add(UIDFolder.FetchProfileItem.UID)
+            add(FetchProfile.Item.CONTENT_INFO)
+        }
+        folder.fetch(messages, fp)
+
+        val results = mutableListOf<RemoteMessageDetail>()
+        for (i in messages.indices.reversed()) {
+            val msg = messages[i]
+            val uid = folder.getUID(msg)
+            if (uid >= startUid) {
+                val header = parseMessageHeader(msg, uid)
+                if (cachedUids.contains(uid)) {
+                    // Body already stored locally - return header for flag sync only
+                    results.add(RemoteMessageDetail(header, null, null, emptyList()))
+                } else {
+                    val bodyPlain = StringBuilder()
+                    val bodyHtml = StringBuilder()
+                    val attachments = mutableListOf<RemoteAttachment>()
+
+                    try {
+                        parsePartContent(msg, bodyPlain, bodyHtml, attachments, 0)
+                    } catch (_: Exception) {}
+
+                    val finalHtml = bodyHtml.toString().trim().ifEmpty { null }
+                    val rawPlain = bodyPlain.toString().trim().ifEmpty { null }
+                    val finalPlain = rawPlain ?: HtmlTextExtractor.toPlainText(finalHtml).ifEmpty { null }
+
+                    val snippet = if (!finalPlain.isNullOrBlank()) {
+                        finalPlain.take(200).replace("\n", " ").trim()
+                    } else {
+                        header.previewSnippet
+                    }
+
+                    val updatedHeader = header.copy(
+                        previewSnippet = snippet,
+                        hasAttachments = attachments.isNotEmpty()
+                    )
+
+                    results.add(
+                        RemoteMessageDetail(
+                            header = updatedHeader,
+                            bodyPlain = finalPlain,
+                            bodyHtml = finalHtml,
+                            attachments = attachments
+                        )
+                    )
+                }
+            }
+        }
+        results
+    }
+
     suspend fun fetchMessageDetail(
         folder: IMAPFolder,
         uid: Long
@@ -146,11 +218,18 @@ class ImapClient @Inject constructor() {
 
         parsePartContent(msg, bodyPlain, bodyHtml, attachments, 0)
 
-        val finalPlain = bodyPlain.toString().trim().ifEmpty { null }
         val finalHtml = bodyHtml.toString().trim().ifEmpty { null }
+        val rawPlain = bodyPlain.toString().trim().ifEmpty { null }
+        val finalPlain = rawPlain ?: HtmlTextExtractor.toPlainText(finalHtml).ifEmpty { null }
+
+        val snippet = if (!finalPlain.isNullOrBlank()) {
+            finalPlain.take(200).replace("\n", " ").trim()
+        } else {
+            header.previewSnippet
+        }
 
         RemoteMessageDetail(
-            header = header,
+            header = header.copy(previewSnippet = snippet, hasAttachments = attachments.isNotEmpty()),
             bodyPlain = finalPlain,
             bodyHtml = finalHtml,
             attachments = attachments

@@ -34,6 +34,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE folderId = :folderId ORDER BY receivedDate DESC")
     fun getMessagesForFolder(folderId: Long): Flow<List<MessageEntity>>
 
+    @Query("SELECT * FROM messages WHERE folderId = :folderId")
+    suspend fun getMessagesForFolderSync(folderId: Long): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE folderId = :folderId AND serverUid = :uid LIMIT 1")
     suspend fun getMessageByUid(folderId: Long, uid: Long): MessageEntity?
 
@@ -55,16 +58,25 @@ interface MessageDao {
     @Query("SELECT COUNT(*) FROM messages WHERE folderId = :folderId")
     suspend fun getTotalCount(folderId: Long): Int
 
-    // Full-Text Search across sender, subject, and snippet
+    // Search across title (subject), sender, recipient, content (body & preview), and attachment file names
     @Query("""
-        SELECT * FROM messages
-        WHERE accountId = :accountId AND (
-            subject LIKE '%' || :query || '%'
-            OR senderName LIKE '%' || :query || '%'
-            OR senderAddress LIKE '%' || :query || '%'
-            OR previewSnippet LIKE '%' || :query || '%'
+        SELECT * FROM messages m
+        WHERE m.accountId = :accountId AND (
+            m.subject LIKE '%' || :query || '%'
+            OR m.senderName LIKE '%' || :query || '%'
+            OR m.senderAddress LIKE '%' || :query || '%'
+            OR m.recipientsTo LIKE '%' || :query || '%'
+            OR m.recipientsCc LIKE '%' || :query || '%'
+            OR m.recipientsBcc LIKE '%' || :query || '%'
+            OR m.previewSnippet LIKE '%' || :query || '%'
+            OR m.bodyPlain LIKE '%' || :query || '%'
+            OR m.bodyHtml LIKE '%' || :query || '%'
+            OR EXISTS (
+                SELECT 1 FROM attachments a
+                WHERE a.messageId = m.id AND a.fileName LIKE '%' || :query || '%'
+            )
         )
-        ORDER BY receivedDate DESC
+        ORDER BY m.receivedDate DESC
     """)
     fun searchMessages(accountId: Long, query: String): Flow<List<MessageEntity>>
 
@@ -82,13 +94,25 @@ interface MessageDao {
     """)
     fun getMessagesForFolderType(folderType: FolderType): Flow<List<MessageEntity>>
 
+    // Search across all accounts
     @Query("""
-        SELECT * FROM messages
-        WHERE subject LIKE '%' || :query || '%'
-            OR senderName LIKE '%' || :query || '%'
-            OR senderAddress LIKE '%' || :query || '%'
-            OR previewSnippet LIKE '%' || :query || '%'
-        ORDER BY receivedDate DESC
+        SELECT * FROM messages m
+        WHERE (
+            m.subject LIKE '%' || :query || '%'
+            OR m.senderName LIKE '%' || :query || '%'
+            OR m.senderAddress LIKE '%' || :query || '%'
+            OR m.recipientsTo LIKE '%' || :query || '%'
+            OR m.recipientsCc LIKE '%' || :query || '%'
+            OR m.recipientsBcc LIKE '%' || :query || '%'
+            OR m.previewSnippet LIKE '%' || :query || '%'
+            OR m.bodyPlain LIKE '%' || :query || '%'
+            OR m.bodyHtml LIKE '%' || :query || '%'
+            OR EXISTS (
+                SELECT 1 FROM attachments a
+                WHERE a.messageId = m.id AND a.fileName LIKE '%' || :query || '%'
+            )
+        )
+        ORDER BY m.receivedDate DESC
     """)
     fun searchAllMessages(query: String): Flow<List<MessageEntity>>
 

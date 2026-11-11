@@ -172,7 +172,7 @@ class EmailRepository @Inject constructor(
         }
     }
 
-    suspend fun syncMessages(folderId: Long, limit: Int = 30): Result<Int> = withContext(Dispatchers.IO) {
+    suspend fun syncMessages(folderId: Long, limit: Int = 100): Result<Int> = withContext(Dispatchers.IO) {
         try {
             val folder = folderDao.getFolderById(folderId)
                 ?: return@withContext Result.failure(IllegalArgumentException("Folder not found"))
@@ -180,47 +180,83 @@ class EmailRepository @Inject constructor(
                 ?: return@withContext Result.failure(IllegalArgumentException("Account not found"))
             val credential = getCredential(account)
 
+            val existingMessages = messageDao.getMessagesForFolderSync(folderId)
+            val existingMap = existingMessages.associateBy { it.serverUid }
+            val cachedUids = existingMessages
+                .filter { !it.bodyPlain.isNullOrBlank() || !it.bodyHtml.isNullOrBlank() }
+                .map { it.serverUid }
+                .toSet()
+
             val store = imapClient.connectAndGetStore(account, credential)
             val imapFolder = store.getFolder(folder.serverPath) as IMAPFolder
 
-            val headers = try {
-                imapClient.fetchHeaders(imapFolder, startUid = 1L, limit = limit)
+            val details = try {
+                imapClient.fetchMessagesWithBodies(imapFolder, startUid = 1L, limit = limit, cachedUids = cachedUids)
             } finally {
                 if (imapFolder.isOpen) imapFolder.close(false)
                 store.close()
             }
 
-            val messageEntities = headers.map { h ->
-                val existing = messageDao.getMessageByUid(folderId, h.uid)
-                MessageEntity(
+            for (d in details) {
+                val existing = existingMap[d.header.uid]
+                val plainText = d.bodyPlain ?: existing?.bodyPlain
+                val htmlText = d.bodyHtml ?: existing?.bodyHtml
+                val snippet = if (!d.header.previewSnippet.isBlank() && d.header.previewSnippet != d.header.subject) {
+                    d.header.previewSnippet
+                } else if (!existing?.previewSnippet.isNullOrBlank()) {
+                    existing!!.previewSnippet
+                } else if (!plainText.isNullOrBlank()) {
+                    plainText.take(200).replace("\n", " ").trim()
+                } else {
+                    d.header.subject.take(120)
+                }
+
+                val messageEntity = MessageEntity(
                     id = existing?.id ?: 0,
                     accountId = folder.accountId,
                     folderId = folderId,
-                    serverUid = h.uid,
-                    messageId = h.messageId,
-                    senderName = h.senderName,
-                    senderAddress = h.senderAddress,
-                    recipientsTo = h.recipientsTo,
-                    recipientsCc = h.recipientsCc,
-                    recipientsBcc = h.recipientsBcc,
-                    subject = h.subject,
-                    previewSnippet = h.previewSnippet,
-                    bodyPlain = existing?.bodyPlain,
-                    bodyHtml = existing?.bodyHtml,
-                    receivedDate = h.receivedDate,
-                    isRead = h.isRead,
-                    isStarred = h.isStarred,
-                    hasAttachments = h.hasAttachments
+                    serverUid = d.header.uid,
+                    messageId = d.header.messageId,
+                    senderName = d.header.senderName,
+                    senderAddress = d.header.senderAddress,
+                    recipientsTo = d.header.recipientsTo,
+                    recipientsCc = d.header.recipientsCc,
+                    recipientsBcc = d.header.recipientsBcc,
+                    subject = d.header.subject,
+                    previewSnippet = snippet,
+                    bodyPlain = plainText,
+                    bodyHtml = htmlText,
+                    receivedDate = d.header.receivedDate,
+                    isRead = d.header.isRead,
+                    isStarred = d.header.isStarred,
+                    hasAttachments = d.header.hasAttachments || (existing?.hasAttachments == true)
                 )
-            }
 
-            messageDao.insertMessages(messageEntities)
+                val savedRowId = messageDao.insertMessage(messageEntity)
+                val targetId = if (existing != null && existing.id > 0) existing.id else savedRowId
+
+                if (d.attachments.isNotEmpty()) {
+                    val existingAttachments = attachmentDao.getAttachmentsForMessageSync(targetId)
+                    if (existingAttachments.isEmpty()) {
+                        val attachmentEntities = d.attachments.map { att ->
+                            AttachmentEntity(
+                                messageId = targetId,
+                                fileName = att.fileName,
+                                mimeType = att.mimeType,
+                                sizeBytes = att.sizeBytes,
+                                contentId = att.contentId
+                            )
+                        }
+                        attachmentDao.insertAttachments(attachmentEntities)
+                    }
+                }
+            }
 
             val unreadCount = messageDao.getUnreadCount(folderId)
             val totalCount = messageDao.getTotalCount(folderId)
             folderDao.updateCounts(folderId, unreadCount, totalCount)
 
-            Result.success(messageEntities.size)
+            Result.success(details.size)
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -255,21 +291,25 @@ class EmailRepository @Inject constructor(
                 val updated = message.copy(
                     bodyPlain = detail.bodyPlain,
                     bodyHtml = detail.bodyHtml,
-                    hasAttachments = detail.attachments.isNotEmpty()
+                    hasAttachments = detail.attachments.isNotEmpty(),
+                    previewSnippet = detail.header.previewSnippet.ifBlank { message.previewSnippet }
                 )
                 messageDao.updateMessage(updated)
 
                 if (detail.attachments.isNotEmpty()) {
-                    val attachments = detail.attachments.map { att ->
-                        AttachmentEntity(
-                            messageId = message.id,
-                            fileName = att.fileName,
-                            mimeType = att.mimeType,
-                            sizeBytes = att.sizeBytes,
-                            contentId = att.contentId
-                        )
+                    val existingAtts = attachmentDao.getAttachmentsForMessageSync(message.id)
+                    if (existingAtts.isEmpty()) {
+                        val attachments = detail.attachments.map { att ->
+                            AttachmentEntity(
+                                messageId = message.id,
+                                fileName = att.fileName,
+                                mimeType = att.mimeType,
+                                sizeBytes = att.sizeBytes,
+                                contentId = att.contentId
+                            )
+                        }
+                        attachmentDao.insertAttachments(attachments)
                     }
-                    attachmentDao.insertAttachments(attachments)
                 }
 
                 Result.success(updated)

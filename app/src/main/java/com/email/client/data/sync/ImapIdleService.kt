@@ -58,7 +58,7 @@ class ImapIdleService : Service() {
                     for (acc in accounts) {
                         val inbox = folderDao.getFolderByType(acc.id, FolderType.INBOX)
                         if (inbox != null) {
-                            emailRepository.syncMessages(inbox.id, limit = 15)
+                            emailRepository.syncMessages(inbox.id, limit = 50)
                         }
                     }
                 } catch (_: Exception) {

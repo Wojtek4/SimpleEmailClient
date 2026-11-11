@@ -40,7 +40,7 @@ class MailSyncWorker @AssistedInject constructor(
             if (folderResult.isSuccess) {
                 val inbox = folderDao.getFolderByType(account.id, FolderType.INBOX)
                 if (inbox != null) {
-                    val syncRes = emailRepository.syncMessages(inbox.id, limit = 20)
+                    val syncRes = emailRepository.syncMessages(inbox.id, limit = 50)
                     if (syncRes.isSuccess) {
                         totalNewMessages += syncRes.getOrDefault(0)
                     }
