@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.mail.AuthenticationFailedException
 import javax.mail.Flags
 import javax.mail.Folder
 
@@ -50,6 +51,44 @@ class EmailRepository @Inject constructor(
 
     fun searchMessages(accountId: Long, query: String): Flow<List<MessageEntity>> =
         messageDao.searchMessages(accountId, query)
+
+    suspend fun verifyConnection(account: AccountEntity, passwordOrToken: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val store = imapClient.connectAndGetStore(account, passwordOrToken)
+            try {
+                if (!store.isConnected) {
+                    return@withContext Result.failure(IllegalStateException("Unable to connect to IMAP server"))
+                }
+                val defaultFolder = store.defaultFolder
+                if (defaultFolder == null) {
+                    return@withContext Result.failure(IllegalStateException("Connected, but mail storage is not accessible"))
+                }
+            } finally {
+                if (store.isConnected) {
+                    store.close()
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            val message = when {
+                e is AuthenticationFailedException || e.cause is AuthenticationFailedException ->
+                    "Authentication failed: Incorrect email or password. If using Gmail, Outlook, or Yahoo, please generate and use an App Password."
+                e is java.net.UnknownHostException || e.cause is java.net.UnknownHostException ->
+                    "Server not found: '${account.imapHost}'. Please verify the host address."
+                e is java.net.SocketTimeoutException || e.cause is java.net.SocketTimeoutException ->
+                    "Connection timed out. Please check your internet connection, server host, and port."
+                e is java.net.ConnectException || e.cause is java.net.ConnectException ->
+                    "Connection refused to ${account.imapHost}:${account.imapPort}. Please verify port and SSL settings."
+                e is javax.net.ssl.SSLException || e.cause is javax.net.ssl.SSLException ->
+                    "SSL/TLS security negotiation failed. Please check the port (993 for SSL) or server security configuration."
+                !e.message.isNullOrBlank() ->
+                    "Failed to connect: ${e.message}"
+                else ->
+                    "Could not connect to email server. Please check your settings."
+            }
+            Result.failure(Exception(message, e))
+        }
+    }
 
     suspend fun addAccount(account: AccountEntity, passwordOrToken: String): Long {
         val id = accountDao.insertAccount(account)

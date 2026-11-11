@@ -24,6 +24,7 @@ $javaCmd = Get-Command java -ErrorAction SilentlyContinue
 if (-not $javaCmd) {
     # Check default common locations
     $knownJavaDirs = @(
+        "$env:LOCALAPPDATA\Programs\jdk-17",
         "$env:ProgramFiles\Eclipse Adoptium\jdk-17*",
         "$env:ProgramFiles\Microsoft\jdk-17*",
         "$env:ProgramFiles\Java\jdk-17*",

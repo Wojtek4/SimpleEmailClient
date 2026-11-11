@@ -98,12 +98,23 @@ class OnboardingViewModel @Inject constructor(
                     isDefault = true
                 )
 
+                // 1. Verify credentials and connection with server first
+                val verifyResult = emailRepository.verifyConnection(account, state.passwordOrToken)
+                if (verifyResult.isFailure) {
+                    val errorMsg = verifyResult.exceptionOrNull()?.message 
+                        ?: "Failed to connect to email server. Please check your credentials and server settings."
+                    _uiState.update { it.copy(isLoading = false, errorMessage = errorMsg) }
+                    return@launch
+                }
+
+                // 2. Only if connection succeeds, persist account and sync folders
                 val accountId = emailRepository.addAccount(account, state.passwordOrToken)
                 emailRepository.syncFolders(accountId)
 
+                // 3. Mark created to allow navigation to mailbox
                 _uiState.update { it.copy(isLoading = false, isAccountCreated = true) }
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, errorMessage = e.message ?: "Failed to connect") }
+                _uiState.update { it.copy(isLoading = false, errorMessage = e.message ?: "Failed to connect to email server") }
             }
         }
     }
